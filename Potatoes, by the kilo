@@ -108,9 +108,9 @@ footer{padding:2rem 0;font-size:.95rem}
 <script>
 /* ====== EDIT THESE ====== */
 const SHOP = {
-  currency: "$",                 // e.g. "EGP ", "£", "€"
-  whatsapp: "15551234567",       // your number, digits only, with country code
-  email: "orders@example.com",   // where orders are sent
+  currency: "EGP",                 // e.g. "EGP ", "£", "€"
+  whatsapp: "+201118828558",       // your number, digits only, with country code
+  email: "5000dido@gmail.com",   // where orders are sent
   minKg: 2
 };
 const PRODUCTS = [
