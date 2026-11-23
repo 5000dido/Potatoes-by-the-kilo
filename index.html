@@ -105,12 +105,14 @@ footer{padding:2rem 0;font-size:.95rem}
   <div class="wrap">© <span id="yr"></span> Good Spuds. Questions? Message us on WhatsApp or email.</div>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@colada_app/web-sdk@0.3.0/dist/colada.min.js"></script>
 <script>
 /* ====== EDIT THESE ====== */
 const SHOP = {
-  currency: "EGP",                 // e.g. "EGP ", "£", "€"
-  whatsapp: "+201118828558",       // your number, digits only, with country code
-  email: "5000dido@gmail.com",   // where orders are sent
+  currency: "EGP ",                // symbol shown on the page, e.g. "EGP ", "£", "€"
+  currencyCode: "EGP",             // ISO 4217 code sent to Colada
+  whatsapp: "201118828558",        // your number, digits only, with country code
+  email: "5000dido@gmail.com",     // where orders are sent
   minKg: 2
 };
 const PRODUCTS = [
@@ -126,6 +128,46 @@ const fmt = n => SHOP.currency + n.toFixed(2);
 const $ = id => document.getElementById(id);
 
 $("yr").textContent = new Date().getFullYear();
+
+/* ====== Colada tracking ====== */
+const COLADA_TEST_KEY = "pk_live_b795c55c0bd65b71b81dd5298d55e8720fac7f9881a213045891faa7d60638d6";
+const COLADA_LIVE_KEY = "pk_live_c2bd31ca7ac68ca9ad2eb01639f74a93d6f95401f134742e67a2b11f3ae29f32";
+// Test key on local files / localhost, live key on the published site.
+const IS_LOCAL = ["", "localhost", "127.0.0.1"].includes(location.hostname);
+
+function guestId(){
+  let id = null;
+  try { id = localStorage.getItem("guestId"); } catch (e) {}
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+       : "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    try { localStorage.setItem("guestId", id); } catch (e) {}
+  }
+  return id;
+}
+
+let coladaReady = null;
+try {
+  coladaReady = window.colada.init({
+    publicTenantKey: IS_LOCAL ? COLADA_TEST_KEY : COLADA_LIVE_KEY,
+    debug: IS_LOCAL
+  });
+  window.colada.identify(guestId());
+} catch (e) { console.warn("[Colada]", e); }
+
+// Fire-and-forget: never blocks or breaks the shop.
+function track(name, meta){
+  try {
+    if (!coladaReady) return;
+    coladaReady
+      .then(r => {
+        if (!r || !r.ok) { console.warn("[Colada] init failed:", r && r.reason); return; }
+        return window.colada.track(name, meta);
+      })
+      .then(r => { if (r && !r.ok) console.warn("[Colada] track failed:", r.reason, r.message); })
+      .catch(e => console.warn("[Colada]", e));
+  } catch (e) { console.warn("[Colada]", e); }
+}
 
 $("products").innerHTML = PRODUCTS.map(p => `
   <article class="item">
@@ -147,6 +189,10 @@ $("products").addEventListener("click", e => {
   cart[id] = Math.max(0, (cart[id] || 0) + Number(b.dataset.d));
   $("q-" + id).textContent = cart[id] + " kg";
   render();
+  if (Number(b.dataset.d) > 0) {
+    const p = PRODUCTS.find(x => x.id === id);
+    track("AddToCart", { contentId: id, quantity: 1, amount: p.price, currency: SHOP.currencyCode });
+  }
 });
 
 function items(){ return PRODUCTS.filter(p => cart[p.id] > 0).map(p => ({...p, kg:cart[p.id]})); }
@@ -162,6 +208,21 @@ function render(){
 }
 render();
 
+// InitiateCheckout: first time the customer starts filling in the form
+$("form").addEventListener("focusin", () => {
+  if (window._icSent) return;
+  window._icSent = true;
+  track("InitiateCheckout", { amount: Number(total().toFixed(2)), currency: SHOP.currencyCode });
+}, { once: false });
+
+// ViewCheckout: the order section scrolls into view (once)
+if ("IntersectionObserver" in window) {
+  const io = new IntersectionObserver(entries => {
+    if (entries.some(en => en.isIntersecting)) { track("ViewCheckout"); io.disconnect(); }
+  }, { threshold: 0.3 });
+  io.observe($("order"));
+}
+
 $("form").addEventListener("submit", e => {
   e.preventDefault();
   const note = $("note");
@@ -174,6 +235,15 @@ $("form").addEventListener("submit", e => {
     ? `mailto:${SHOP.email}?subject=${encodeURIComponent("Potato order")}&body=${encodeURIComponent(msg)}`
     : `https://wa.me/${SHOP.whatsapp}?text=${encodeURIComponent(msg)}`;
   note.textContent = "Opening your message. Press send to place the order.";
+  // Tracking: first order from this browser = registration; every order = PlaceAnOrder
+  let first = true;
+  try { first = !localStorage.getItem("coladaRegistered"); localStorage.setItem("coladaRegistered", "1"); } catch (err) {}
+  if (first) track("CompleteRegistration");
+  track("PlaceAnOrder", {
+    orderId: "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    amount: Number(total().toFixed(2)),
+    currency: SHOP.currencyCode
+  });
   window.open(url, "_blank", "noopener");
 });
 </script>
